@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Friday UFC predictions by SMS. Preview by default; --send enables Twilio."""
+"""Friday UFC predictions by Gmail. Preview by default; --send enables email."""
 import argparse
 from contextlib import contextmanager
 import datetime as dt
@@ -12,7 +12,11 @@ from pathlib import Path
 import re
 import sys
 import tempfile
-import textwrap
+import smtplib
+import ssl
+from email.message import EmailMessage
+from email.headerregistry import Address
+from email.utils import formatdate, make_msgid
 from zoneinfo import ZoneInfo
 
 import requests
@@ -51,7 +55,7 @@ def collect_reports(today):
     reports = []
     for when, url, _ in events:
         name, bouts = predictor.event_card(session, url)
-        with tempfile.TemporaryDirectory(prefix="ufc-sms-") as scratch:
+        with tempfile.TemporaryDirectory(prefix="ufc-email-") as scratch:
             original = features.output_csv_filename
             try:
                 features.output_csv_filename = str(Path(scratch) / "features.csv")
@@ -109,52 +113,70 @@ def format_messages(report):
     lines.extend(missing_odds)
     lines.append("Stake % already includes fractional Kelly and cap; do not multiply by 5% again.")
     lines.append("Sizing uses 80% model + 20% devigged market. Odds are a snapshot; check before betting.")
-    # Bound each request well below Twilio's 1,600-character limit, including
-    # UTF-16 surrogate pairs. Preserve complete lines except pathological names.
-    blocks, current = [], ""
-    for line in lines:
-        for piece in textwrap.wrap(line, width=600, replace_whitespace=False) or [""]:
-            candidate = current + ("\n" if current else "") + piece
-            if len(candidate.encode("utf-16-le")) // 2 > 1250:
-                blocks.append(current)
-                current = piece
-            else:
-                current = candidate
-    if current:
-        blocks.append(current)
-    header = f"UFC Alpha | {report['event'][:80]} | {report['event_date']}"
-    return [f"{header} ({i}/{len(blocks)})\n{block}" for i, block in enumerate(blocks, 1)]
+    header = f"UFC Alpha | {report['event']} | {report['event_date']}"
+    return [header + "\n" + "\n".join(lines)]
 
 
-class TwilioSender:
-    """One POST per part, no implicit retries and no sensitive response logging."""
+class NotSubmittedError(RuntimeError):
+    """Known failure before acceptance; retrying cannot duplicate delivery."""
+
+
+class GmailSender:
+    """Gmail SMTP with verified TLS and one recipient. No automatic SMTP retry."""
     def __init__(self, config):
-        required = ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "UFC_SMS_TO")
+        required = ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD")
         missing = [key for key in required if not config.get(key)]
         if missing:
-            raise ValueError("Missing SMS configuration: " + ", ".join(missing))
-        self.account = config["TWILIO_ACCOUNT_SID"]
-        self.token = config["TWILIO_AUTH_TOKEN"]
-        self.sender = config["TWILIO_FROM_NUMBER"]
-        self.recipient = config["UFC_SMS_TO"]
-        if not re.fullmatch(r"AC[0-9a-fA-F]{32}", self.account):
-            raise ValueError("TWILIO_ACCOUNT_SID must be an AC account SID")
-        for key, phone in [("TWILIO_FROM_NUMBER", self.sender), ("UFC_SMS_TO", self.recipient)]:
-            if not re.fullmatch(r"\+[1-9][0-9]{7,14}", phone):
-                raise ValueError(f"{key} must be an E.164 phone number")
+            raise ValueError("Missing email configuration: " + ", ".join(missing))
+        self.sender = config["GMAIL_ADDRESS"].strip()
+        self.recipient = (config.get("UFC_EMAIL_TO") or self.sender).strip()
+        self.password = "".join(config["GMAIL_APP_PASSWORD"].split())
+        if not re.fullmatch(r"[a-zA-Z0-9]{16}", self.password):
+            raise ValueError("GMAIL_APP_PASSWORD must be a 16-character Google app password")
+        for key, address in [("GMAIL_ADDRESS", self.sender), ("UFC_EMAIL_TO", self.recipient)]:
+            try:
+                parsed = Address(addr_spec=address)
+                if (not address.isascii() or not parsed.username or "." not in parsed.domain
+                        or parsed.addr_spec != address):
+                    raise ValueError()
+            except (ValueError, IndexError):
+                raise ValueError(f"{key} must be a single email address without a display name") from None
 
-    def __call__(self, body):
-        response = requests.post(
-            f"https://api.twilio.com/2010-04-01/Accounts/{self.account}/Messages.json",
-            auth=(self.account, self.token),
-            data={"From": self.sender, "To": self.recipient, "Body": body}, timeout=30)
-        if response.status_code != 201:
-            raise RuntimeError(f"Twilio rejected submission (HTTP {response.status_code}); check Twilio logs")
-        payload = response.json()
-        if (not re.fullmatch(r"SM[0-9a-fA-F]{32}", payload.get("sid", "")) or
-                payload.get("status") not in {"accepted", "queued", "sending", "sent", "delivered"}):
-            raise RuntimeError("Twilio did not confirm submission; check Twilio logs")
-        return payload["sid"]
+    def __call__(self, content, *, before_submit=None):
+        subject, body = content.split("\n", 1)
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = self.sender
+        message["To"] = self.recipient
+        message["Date"] = formatdate(localtime=False)
+        message["Message-ID"] = make_msgid(domain=self.sender.split("@", 1)[1])
+        message.set_content(body)
+        client = None
+        try:
+            try:
+                client = smtplib.SMTP_SSL("smtp.gmail.com", 465,
+                                          context=ssl.create_default_context(), timeout=30)
+                client.login(self.sender, self.password)
+            except (OSError, smtplib.SMTPException):
+                raise NotSubmittedError("Gmail connection/login failed; check network and app password") from None
+            if before_submit is not None:
+                before_submit()
+            try:
+                refused = client.send_message(message, from_addr=self.sender, to_addrs=[self.recipient])
+                if refused:
+                    raise NotSubmittedError("Gmail refused the recipient")
+            except (smtplib.SMTPRecipientsRefused, smtplib.SMTPSenderRefused,
+                    smtplib.SMTPDataError, smtplib.SMTPNotSupportedError):
+                raise NotSubmittedError("Gmail rejected the email; check account and recipient settings") from None
+            # Gmail accepted DATA. A Message-ID is a correlation ID, not proof
+            # of inbox delivery. Closing the socket cannot undo that acceptance.
+            return str(message["Message-ID"])
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except OSError:
+                    pass
 
 
 @contextmanager
@@ -164,7 +186,7 @@ def file_lock(path):
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise RuntimeError("Another SMS run is already running") from None
+            raise RuntimeError("Another Email run is already running") from None
         try:
             yield
         finally:
@@ -192,16 +214,18 @@ def deliver(path, messages, send, *, before_send=None):
                 or not state["parts"] or any(
                     not isinstance(part, dict) or not isinstance(part.get("body"), str)
                     or part.get("status") not in {"pending", "sending", "submitted"}
-                    or (part["status"] == "submitted" and not part.get("sid"))
+                    or (part["status"] == "submitted" and not part.get("message_id"))
                     for part in state["parts"])):
-            raise RuntimeError(f"Invalid SMS delivery state; inspect {path}")
-        # An interrupted POST may have reached Twilio. Never silently retry it.
+            raise RuntimeError(f"Invalid email delivery state; inspect {path}")
+        # An interrupted SMTP submission may have reached Gmail. Never silently retry it.
         if any(part["status"] == "sending" for part in state["parts"]):
-            raise RuntimeError(f"SMS delivery uncertain; inspect Twilio logs and {path} before retrying")
+            raise RuntimeError(f"Email delivery uncertain; inspect Gmail's Sent folder and {path} before retrying")
         if all(part["status"] == "submitted" for part in state["parts"]):
             return "already submitted"
         if [part["body"] for part in state["parts"]] != messages:
-            raise RuntimeError("Forecast changed after partial SMS submission; review before resuming")
+            if any(part["status"] == "submitted" for part in state["parts"]):
+                raise RuntimeError("Forecast changed after partial email submission; review before resuming")
+            state = {"parts": [dict(body=body, status="pending") for body in messages]}
         for part in state["parts"]:
             if part["status"] == "submitted":
                 continue
@@ -209,8 +233,13 @@ def deliver(path, messages, send, *, before_send=None):
                 before_send()
             part["status"] = "sending"
             save_state(path, state)
-            sid = send(part["body"])
-            part.update(status="submitted", sid=sid)
+            try:
+                message_id = send(part["body"])
+            except NotSubmittedError:
+                part["status"] = "pending"
+                save_state(path, state)
+                raise
+            part.update(status="submitted", message_id=message_id)
             save_state(path, state)
         return "submitted"
 
@@ -219,7 +248,7 @@ def verify_card(report):
     import predict_event as predictor
     _, current = predictor.event_card(predictor.ufcnet.new_session(), report["event_url"])
     if {frozenset(bout) for bout in current} != {frozenset(bout) for bout in report["bouts"]}:
-        raise RuntimeError("Card changed during predictions; hold SMS and review the updated card")
+        raise RuntimeError("Card changed during predictions; hold email and review the updated card")
 
 
 def run(*, send, scheduled, state_dir, hold_file, now=None):
@@ -227,12 +256,12 @@ def run(*, send, scheduled, state_dir, hold_file, now=None):
     if scheduled and not in_send_window(now):
         return 0
     if hold_file.exists():
-        print("SMS on hold; remove the hold file after reviewing the card.")
+        print("Email on hold; remove the hold file after reviewing the card.")
         return 0
-    sender = TwilioSender(os.environ) if send else None
+    sender = GmailSender(os.environ) if send else None
     reports = collect_reports(now.astimezone(EASTERN).date())
     if not reports:
-        print("No upcoming card this weekend; no SMS.")
+        print("No upcoming card this weekend; no email.")
         return 0
     for report in reports:
         messages = format_messages(report)
@@ -241,34 +270,38 @@ def run(*, send, scheduled, state_dir, hold_file, now=None):
             continue
         key = hashlib.sha256((report["event_url"].rstrip("/").split("/")[-1] + "|" +
                               report["event_date"] + "|" + sender.recipient).encode()).hexdigest()
+        def check_send_allowed():
+            if hold_file.exists():
+                raise NotSubmittedError("Email hold enabled before submission")
+            if scheduled and not in_send_window(dt.datetime.now(EASTERN)):
+                raise NotSubmittedError("Friday email window closed before submission")
         def before_send():
             verify_card(report)
-            # Recheck after the network fetch: a hold can be enabled, or the
-            # send window can close, while waiting for the card response.
-            if hold_file.exists():
-                raise RuntimeError("SMS hold enabled before submission")
-            if scheduled and not in_send_window(dt.datetime.now(EASTERN)):
-                raise RuntimeError("Friday SMS window closed before submission")
-        result = deliver(state_dir / f"{key}.json", messages, sender, before_send=before_send)
-        print(f"{report['event']}: {result} to Twilio (delivery not yet confirmed)")
+            check_send_allowed()
+        def submit(content):
+            # Login is another network round trip. Check the hold/window again
+            # after authentication and before sending any message data.
+            return sender(content, before_submit=check_send_allowed)
+        result = deliver(state_dir / f"{key}.json", messages, submit, before_send=before_send)
+        print(f"{report['event']}: {result} to Gmail (delivery not yet confirmed)")
     return 0
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     mode = ap.add_mutually_exclusive_group()
-    mode.add_argument("--send", action="store_true", help="submit SMS through Twilio")
+    mode.add_argument("--send", action="store_true", help="submit email through Gmail")
     mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
     ap.add_argument("--scheduled", action="store_true", help="only run Friday 21:00-21:14 Toronto time")
     ap.add_argument("--check-config", action="store_true", help="validate credentials format without network calls")
     args = ap.parse_args(argv)
     os.chdir(ROOT)
     if args.check_config:
-        TwilioSender(os.environ)
-        print("SMS configuration format is valid (credentials not authenticated).")
+        GmailSender(os.environ)
+        print("Email configuration format is valid (credentials not authenticated).")
         return 0
-    state_dir = Path(os.environ.get("UFC_SMS_STATE_DIR", ROOT / "data/sms_delivery"))
-    hold_file = Path(os.environ.get("UFC_SMS_HOLD_FILE", ROOT / "data/sms.hold"))
+    state_dir = Path(os.environ.get("UFC_EMAIL_STATE_DIR", ROOT / "data/email_delivery"))
+    hold_file = Path(os.environ.get("UFC_EMAIL_HOLD_FILE", ROOT / "data/email.hold"))
     if args.send:
         with file_lock(state_dir / "run.lock"):
             return run(send=True, scheduled=args.scheduled, state_dir=state_dir, hold_file=hold_file)
@@ -280,7 +313,7 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:
         # requests exceptions can carry URLs/account details; keep logs limited.
-        print(f"SMS FAILED: {type(exc).__name__}: " +
-              ("network request failed; check provider/network logs" if isinstance(exc, requests.RequestException)
+        print(f"Email FAILED: {type(exc).__name__}: " +
+              ("network request failed; check provider/network logs" if isinstance(exc, (requests.RequestException, smtplib.SMTPException, OSError))
                else str(exc)), file=sys.stderr)
         raise SystemExit(1)

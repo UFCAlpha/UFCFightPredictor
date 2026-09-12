@@ -34,7 +34,12 @@ saved_models/backup_*/
 test_results/.edge_tune_cache/
 test_results/.oos2024_cache*/
 
-# SMS credentials, hold switch, and private delivery receipts
+# Email credentials, hold switch, and private delivery receipts
+.email.env
+data/email.hold
+data/email_delivery/
+
+# Keep credentials/receipts from the earlier SMS version private too
 .sms.env
 data/sms.hold
 data/sms_delivery/

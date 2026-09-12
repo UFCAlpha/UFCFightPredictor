@@ -61,9 +61,9 @@ https://www.mma-ai.net/
 Tilburg University: 62% (RandomForest, Neural Network)
 http://arno.uvt.nl/show.cgi?fid=156304
 
-### Friday SMS picks
+### Friday email picks
 
-[SMS setup and operations](docs/sms-picks.md) covers Twilio configuration,
+[Email setup and operations](docs/email-picks.md) covers Gmail configuration,
 Friday 9 PM Toronto scheduling, the weigh-in hold switch, previewing predictions,
-and bankroll-percentage stakes. Start with `./run_sms_scheduled.sh --dry-run`;
-SMS submission requires `--send` or installation of the dedicated scheduler.
+and bankroll-percentage stakes. Start with `./run_email_scheduled.sh --dry-run`;
+email submission requires `--send` or installation of the dedicated scheduler.

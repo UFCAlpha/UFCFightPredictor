@@ -3,7 +3,7 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO"
-CONFIG="${UFC_SMS_CONFIG:-$REPO/.sms.env}"
+CONFIG="${UFC_EMAIL_CONFIG:-$REPO/.email.env}"
 if [ -f "$CONFIG" ]; then
     set -a
     source "$CONFIG"
@@ -18,15 +18,15 @@ resolve_python() {
             echo "$candidate"
             return 0
         fi
-        echo "SMS: configured interpreter is missing pipeline dependencies; skipping" >&2
+        echo "EMAIL: configured interpreter is missing pipeline dependencies; skipping" >&2
     done
     return 1
 }
 if ! PY="$(resolve_python)"; then
-    echo "SMS: no usable Python. Create .venv or set UFC_PYTHON in .sms.env." >&2
+    echo "EMAIL: no usable Python. Create .venv or set UFC_PYTHON in .email.env." >&2
     exit 1
 fi
 if [ "$#" -eq 0 ]; then
     set -- --send --scheduled
 fi
-exec "$PY" "$REPO/sms_picks.py" "$@"
+exec "$PY" "$REPO/email_picks.py" "$@"
