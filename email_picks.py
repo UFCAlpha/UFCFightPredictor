@@ -154,8 +154,10 @@ class GmailSender:
         client = None
         try:
             try:
-                client = smtplib.SMTP_SSL("smtp.gmail.com", 465,
-                                          context=ssl.create_default_context(), timeout=30)
+                # Framework Python on macOS may have no system CA bundle.
+                # Use Requests' installed roots while still verifying TLS.
+                context = ssl.create_default_context(cafile=requests.certs.where())
+                client = smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context, timeout=30)
                 client.login(self.sender, self.password)
             except (OSError, smtplib.SMTPException):
                 raise NotSubmittedError("Gmail connection/login failed; check network and app password") from None

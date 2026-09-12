@@ -401,3 +401,13 @@ def test_close_error_after_acceptance_does_not_erase_receipt(picks, gmail_config
     path = tmp_path / "receipt.json"
     assert picks.deliver(path, ["Picks\nCard"], picks.GmailSender(gmail_config)) == "submitted"
     assert json.loads(path.read_text())["parts"][0]["status"] == "submitted"
+
+
+def test_gmail_loads_ca_bundle_without_system_certificates(picks, gmail_config, smtp_server, monkeypatch, tmp_path):
+    monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "missing.pem"))
+    monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path / "missing-certs"))
+    def connect(*args, **kwargs):
+        assert kwargs["context"].get_ca_certs(), "Gmail TLS must have trusted root certificates"
+        return smtp_server
+    monkeypatch.setattr(picks.smtplib, "SMTP_SSL", connect)
+    picks.GmailSender(gmail_config)("Picks\nCard")
