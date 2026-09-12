@@ -385,3 +385,8 @@ joblib.dump(label_encoder, label_encoder_filename)
 selected_columns_filename = os.path.join(preprocessing_save_dir, "selected_columns.json")
 with open(selected_columns_filename, "w") as file:
     json.dump(selected_columns, file)
+
+# Record genuinely unseen holdout metrics before auto_retrain's production refit.
+# These hashes bind validation to this exact dataset and candidate artifact set.
+from production_refit import record_candidate_evaluation
+record_candidate_evaluation(file_path, model_save_dir, preprocessing_save_dir)

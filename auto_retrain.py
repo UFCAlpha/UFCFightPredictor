@@ -138,6 +138,11 @@ def restore_models(backup):
     prep = os.path.join(backup, "saved_preprocessing")
     if os.path.isdir(prep):
         shutil.copytree(prep, PREP_DIR, dirs_exist_ok=True)
+    # Older backups predate the manifest. Never retain metadata from a failed
+    # refit while restoring an older model generation.
+    manifest = os.path.join(PREP_DIR, "training_manifest.json")
+    if not os.path.exists(os.path.join(prep, "training_manifest.json")) and os.path.exists(manifest):
+        os.remove(manifest)
     log.info(f"✓ Restored models from {os.path.relpath(backup, ROOT)}")
 
 
@@ -159,8 +164,11 @@ def step_train():
 
 
 def evaluate_saved_ensemble():
-    """Accuracy of the models now on disk, over ml_ensemble.py's own holdout
-    split (the last 5% of fights chronologically, which it never trains on)."""
+    """Evaluate candidates only; production refits have already seen the holdout."""
+    if os.path.exists(os.path.join(PREP_DIR, "training_manifest.json")):
+        from production_refit import load_candidate_evaluation
+        report = load_candidate_evaluation(FEATURES, MODEL_DIR, PREP_DIR)
+        return report["evaluation"]["accuracy"], report["evaluation"]["n"]
     import joblib
     import numpy as np
     import pandas as pd
@@ -183,15 +191,28 @@ def evaluate_saved_ensemble():
 
 def step_validate(backup):
     banner("STEP 5: VALIDATION")
-    accuracy, n = evaluate_saved_ensemble()
-    log.info(f"Holdout accuracy: {accuracy:.4f} over {n} fights "
-             f"(threshold {MIN_ACCURACY:.2f})")
-    if accuracy < MIN_ACCURACY:
-        log.error(f"✗ Below threshold — rolling back to previous models")
+    try:
+        accuracy, n = evaluate_saved_ensemble()
+        log.info(f"Candidate holdout accuracy: {accuracy:.4f} over {n} fights "
+                 f"(threshold {MIN_ACCURACY:.2f})")
+        if not 0 <= accuracy <= 1 or accuracy < MIN_ACCURACY:
+            raise RuntimeError(f"validation failed: {accuracy:.4f} < {MIN_ACCURACY:.2f}")
+    except Exception:
         restore_models(backup)
-        raise RuntimeError(f"validation failed: {accuracy:.4f} < {MIN_ACCURACY:.2f}")
-    log.info("✓ Validation passed — new models kept")
+        raise
+    log.info("✓ Candidate validation passed — ready for production refit")
     return accuracy
+
+
+def step_refit(backup):
+    banner("STEP 5b: PRODUCTION REFIT INCLUDING LATEST COMPLETED FIGHTS")
+    from production_refit import refit_production_ensemble
+    try:
+        return refit_production_ensemble(FEATURES, MODEL_DIR, PREP_DIR,
+                                        min_accuracy=MIN_ACCURACY, log=log.info)
+    except Exception:
+        restore_models(backup)
+        raise
 
 
 # ----------------------------------------------------------------------- main
@@ -244,13 +265,14 @@ def main():
         else:
             backup = step_train()
             accuracy = step_validate(backup)
+            step_refit(backup)
 
         banner("STEP 6: NOTIFICATION")
         summary = "✓ Auto-retraining success"
         if new_fights:
             summary += f": {new_fights} new fights"
         if accuracy is not None:
-            summary += f", holdout accuracy {accuracy:.4f}"
+            summary += f", pre-refit candidate holdout accuracy {accuracy:.4f}"
         log.info(summary)
         log.info(f"Elapsed: {datetime.datetime.now() - started}")
         log.info(f"Log file: {os.path.relpath(log_path, ROOT)}")

@@ -1,0 +1,89 @@
+{
+  "stage": "production",
+  "created_at": "2026-09-12T15:48:03.851672+00:00",
+  "data_sha256": "8d2a444435d216d66b6c05feb40b0aa1d3dfebf6816df3cbc60630d3c37e6e00",
+  "artifact_sha256": {
+    "lgbm_model_0.joblib": "a2412f25418f890d603b5f35ce4aead6c6e34adb16260efff720e2792d47e980",
+    "lgbm_model_1.joblib": "734a329007b30396afc254ecb91f73b61cd28e97f3520e8cc1641f4fc557b224",
+    "lgbm_model_2.joblib": "b918f430bf611708bba264c811a9c3238fab96e5513e9735e8feb4c546df4220",
+    "lgbm_model_3.joblib": "5a7d9fde27e0c300713c532b90a31b3d24f63d3801ce3e5ba6b0e2cbe56c4a76",
+    "lgbm_model_4.joblib": "4a9c02d24ee548aa0da65920ed282556aa663ee0b004547679a80dc71b675d29",
+    "selected_columns.json": "9bce8957d9a4c6911c58bf5b99100bf181bb01c795320d166da8f74e67b45092",
+    "label_encoder.joblib": "ea17bd112697d731066e7c04a7cd0307a46bfee25cf3ea31ad5adf9a28175610",
+    "calibrator.joblib": "4be5ae1d8478c5798799f77f122480f0ff31c95461b6c786b7331bd629de777d"
+  },
+  "candidate": {
+    "rows": 2869,
+    "first_row": 1229,
+    "holdout_first_row": 4098,
+    "first_fight": "2014-10-25",
+    "last_fight": "2025-11-22"
+  },
+  "evaluation": {
+    "scope": "candidate holdout before production refit",
+    "n": 216,
+    "first_fight": "2025-11-22",
+    "last_fight": "2026-09-05",
+    "accuracy": 0.6666666666666666,
+    "log_loss": 0.6214408846682735,
+    "brier": 0.2152972927837044,
+    "auc": 0.7263374485596708
+  },
+  "candidate_artifact_sha256": {
+    "lgbm_model_0.joblib": "d2d79452b97c8b20a4f8f62dacab920be2e9caa0f2067761518794c6d759c344",
+    "lgbm_model_1.joblib": "dabb853319132446c5a8c5b7ca683da7da19d826d182165cb5cd4f6ec3777c2e",
+    "lgbm_model_2.joblib": "e6851e723826d8891bca584cafae09db4b57d8203b9b3d7691697f47bc18417e",
+    "lgbm_model_3.joblib": "849da9639a00bcdfa802a35983a4d61e4643e8cebeb05e7bf4aa726a45933854",
+    "lgbm_model_4.joblib": "c052102ec2de91b8c7c727195276540f05343bc05c82e430908f84dd55d436d0",
+    "selected_columns.json": "9bce8957d9a4c6911c58bf5b99100bf181bb01c795320d166da8f74e67b45092",
+    "label_encoder.joblib": "ea17bd112697d731066e7c04a7cd0307a46bfee25cf3ea31ad5adf9a28175610",
+    "calibrator.joblib": "359685e2345913e97b49bea4c9acd6401308e3bed089f83d482b24dd83cdfe37"
+  },
+  "production": {
+    "fitted_at": "2026-09-12T15:48:38.492052+00:00",
+    "rows": 3085,
+    "augmented_rows": 6170,
+    "first_fight": "2014-10-25",
+    "last_fight": "2026-09-05",
+    "temperature": 1.1240849906473014,
+    "calibration_rows": 2547,
+    "calibration_folds": [
+      {
+        "train_end": "2016-11-12",
+        "validation_start": "2016-11-19",
+        "validation_end": "2018-12-01",
+        "train_rows": 538,
+        "validation_rows": 524
+      },
+      {
+        "train_end": "2018-12-01",
+        "validation_start": "2018-12-08",
+        "validation_end": "2020-11-21",
+        "train_rows": 1062,
+        "validation_rows": 448
+      },
+      {
+        "train_end": "2020-11-21",
+        "validation_start": "2020-11-28",
+        "validation_end": "2022-10-22",
+        "train_rows": 1510,
+        "validation_rows": 508
+      },
+      {
+        "train_end": "2022-10-22",
+        "validation_start": "2022-10-29",
+        "validation_end": "2024-09-28",
+        "train_rows": 2018,
+        "validation_rows": 517
+      },
+      {
+        "train_end": "2024-09-28",
+        "validation_start": "2024-10-05",
+        "validation_end": "2026-09-05",
+        "train_rows": 2535,
+        "validation_rows": 550
+      }
+    ],
+    "calibration_oof_log_loss": 0.6561433539281989
+  }
+}

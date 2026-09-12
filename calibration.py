@@ -1,6 +1,7 @@
 """Temperature calibrator for the ensemble's win probabilities.
 
-ml_ensemble.py fits logit(q) = a * logit(p) on pooled out-of-fold predictions
+ml_ensemble.py (evaluation) and production_refit.py (final deployment) fit
+logit(q) = a * logit(p) on pooled chronological out-of-fold predictions
 and saves {'a': ...} to saved_preprocessing/calibrator.joblib; every serving
 path applies it through calibrate() below. The form has no intercept, so
 calibrated corner probabilities stay complementary under the Red/Blue swap,
