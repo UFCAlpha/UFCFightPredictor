@@ -2,7 +2,9 @@
 
 `email_picks.py` emails each upcoming weekend UFC card's predictions and Kelly
 stake percentages through your Gmail account. Each card is one complete email,
-including unavailable predictions and missing odds. It uses the saved ensemble
+including unavailable predictions and missing odds. HTML email displays Fighter A,
+Fighter B, Model Pick, Probability, and Kalshi Odds in a table, with bets below.
+A plain-text alternative is included for clients that do not display HTML. It uses the saved ensemble
 and existing betting policy; it does not retrain or overwrite prediction exports.
 
 ## Configure Gmail
@@ -100,9 +102,19 @@ Use only one scheduler and one delivery-state directory.
 
 ## Stakes and delivery
 
-Predictions average both corner orientations. Bets retain the existing 80% model /
+Kalshi's public market API provides YES buy prices, without account credentials.
+The fight table shows both fighters' ask prices in cents and equivalent American
+odds. Quotes must match the card date and both fighter names in the same active
+fight-winner event; missing or ambiguous matches, zero liquidity, and closed
+markets are unavailable. No sportsbook fallback is used. The API timestamp in
+the email records when the quotes were fetched, not a guaranteed execution price.
+
+Predictions average both corner orientations. Bets use the Kalshi ask prices and
+retain the existing 80% model /
 20% de-vigged market blend, minimum 5% edge, +200 maximum underdog price, 5%
-fractional Kelly, 5% bankroll cap, and no minimum stake.
+fractional Kelly, 5% bankroll cap, and no minimum stake. American odds are converted
+without rounding before sizing. Estimates are before Kalshi fees and slippage;
+check the current price, order size, fees, and settlement terms before betting.
 
 For example, `Kelly 12.50%; stake = bankroll x 0.625%` means $6.25 on a $1,000
 bankroll. The stake percentage already includes fractional Kelly and the cap;
@@ -136,3 +148,5 @@ launchctl bootout gui/$(id -u)/com.ufcpredictor.email  # disable
 This replaces the earlier Twilio implementation. No SMS scheduler was installed
 during development. If you independently installed `com.ufcpredictor.sms`, disable
 it before installing this job. macOS and Linux are supported; Windows is not.
+
+Kalshi API reference: https://docs.kalshi.com/api-reference/market/get-markets

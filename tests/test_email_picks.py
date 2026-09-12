@@ -223,7 +223,10 @@ def fake_predictor(monkeypatch):
         return 2, []
     monkeypatch.setattr(predict_event, "build_features", features)
     monkeypatch.setattr(predict_event, "predict_rows", lambda: [("A", "B", .8), ("B", "A", .2)])
-    monkeypatch.setattr(predict_event, "fetch_odds", lambda *a: {("a", "b"): (-150, 130)})
+    import kalshi_odds
+    monkeypatch.setattr(kalshi_odds, "fetch_quotes", lambda *a: {
+        ("a", "b"): [dict(price=.6, odds=-150), dict(price=100/230, odds=130)]})
+    monkeypatch.setattr(predict_event, "fetch_odds", lambda *a: pytest.fail("sportsbook odds must not size Kalshi bets"))
     return predict_event, scratch
 
 
@@ -289,7 +292,7 @@ def test_run_submits_complete_card_once_and_dry_run_does_not_consume_it(
     picks.run(send=True, **kwargs)
     picks.run(send=True, **kwargs)
     assert len(smtp_server.messages) == 1
-    content = smtp_server.messages[0].get_content()
+    content = smtp_server.messages[0].get_body(preferencelist=("plain",)).get_content()
     assert "A vs B: A 80.0%" in content
     assert "stake = bankroll x 1.95%" in content
     assert "already submitted" in capsys.readouterr().out
@@ -411,3 +414,43 @@ def test_gmail_loads_ca_bundle_without_system_certificates(picks, gmail_config, 
         return smtp_server
     monkeypatch.setattr(picks.smtplib, "SMTP_SSL", connect)
     picks.GmailSender(gmail_config)("Picks\nCard")
+
+
+def test_html_email_has_fight_table_then_bets(picks, report, gmail_config, smtp_server):
+    from bs4 import BeautifulSoup
+    report['kalshi_quotes'] = {('a','b'): [dict(price=.6, odds=-150), dict(price=.41, odds=143.9)]}
+    html = picks.format_html(report)
+    soup = BeautifulSoup(html, 'html.parser')
+    tables = soup.find_all('table')
+    assert [th.get_text() for th in tables[0].find_all('th')] == [
+        'Fighter A','Fighter B','Model Pick','Probability','Kalshi Odds']
+    cells = [td.get_text(' ',strip=True) for td in tables[0].find_all('tr')[1].find_all('td')]
+    assert cells[:4] == ['A','B','A','65.0%']
+    assert 'A: 60¢' in cells[4] and 'B: 41¢' in cells[4]
+    assert 'bankroll × 0.625%' in tables[1].get_text(' ',strip=True)
+    assert 'Unavailable' in tables[0].get_text()
+    picks.GmailSender(gmail_config)(picks.format_messages(report)[0], html=html)
+    message = smtp_server.messages[0]
+    assert message.get_content_type() == 'multipart/alternative'
+    assert '<table' in message.get_body(preferencelist=('html',)).get_content()
+    assert 'A vs B: A 65.0%' in message.get_body(preferencelist=('plain',)).get_content()
+
+
+def test_html_escapes_scraped_names(picks, report):
+    report['event'] = '<img src=x onerror=alert(1)>'
+    report['bouts'] = [('<script>', 'B')]
+    report['rows'] = [('<script>','B',.7),('B','<script>',.3)]
+    report['skipped'] = []
+    html = picks.format_html(report)
+    assert '<script>' not in html and '<img src=x' not in html
+    assert '&lt;script&gt;' in html
+
+
+def test_kalshi_failure_keeps_predictions_but_never_uses_sportsbook_stakes(picks, fake_predictor, monkeypatch):
+    def fail(*args):
+        raise requests.Timeout('unavailable')
+    monkeypatch.setattr(picks.kalshi_odds, 'fetch_quotes', fail)
+    report = picks.collect_reports(dt.date(2026,9,11))[0]
+    assert len(report['rows']) == 2
+    assert report['bets'] == [] and report['odds_map'] == {}
+    assert 'Kalshi odds unavailable' in picks.format_html(report)

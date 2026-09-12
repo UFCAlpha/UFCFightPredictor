@@ -5,6 +5,9 @@ from contextlib import contextmanager
 import datetime as dt
 import fcntl
 import hashlib
+from html import escape
+
+import kalshi_odds
 import json
 import math
 import os
@@ -66,13 +69,16 @@ def collect_reports(today):
             finally:
                 features.output_csv_filename = original
         validate_rows(bouts, rows, skipped)
-        odds_map = predictor.fetch_odds(name, when)
-        # Invalid prices cannot be used in Kelly math. Treat these as unavailable.
-        odds_map = {pair: prices for pair, prices in odds_map.items()
-                    if len(prices) == 2 and all(math.isfinite(p) and abs(p) >= 100 for p in prices)}
+        try:
+            quotes = kalshi_odds.fetch_quotes(bouts, when.date())
+        except (requests.RequestException, ValueError, KeyError, TypeError):
+            print("Kalshi quotes unavailable; predictions only.", file=sys.stderr)
+            quotes = {}
+        odds_map = {pair: tuple(q['odds'] for q in sides) for pair, sides in quotes.items()}
         bets = predictor.recommend(bouts, {(a, b): p for a, b, p in rows}, odds_map)
         reports.append(dict(event=name, event_date=when.date().isoformat(), event_url=url,
-                            bouts=bouts, rows=rows, skipped=skipped, odds_map=odds_map, bets=bets))
+                            bouts=bouts, rows=rows, skipped=skipped, odds_map=odds_map, bets=bets,
+                            kalshi_quotes=quotes, odds_fetched_at=dt.datetime.now(EASTERN).isoformat(timespec='seconds')))
     return reports
 
 
@@ -95,16 +101,18 @@ def format_messages(report):
     for a, b in report["bouts"]:
         if (a, b) in skipped:
             lines.append(f"{a} vs {b}: unavailable ({skipped[(a, b)]})")
+            lines.append("Kalshi odds: " + _kalshi_cell(report, a, b).replace("\n", "; "))
             continue
         p = (probs[a, b] + 1 - probs[b, a]) / 2
         pick, confidence = (a, p) if p >= .5 else (b, 1 - p)
         lines.append(f"{a} vs {b}: {pick} {confidence:.1%}")
+        lines.append("Kalshi odds: " + _kalshi_cell(report, a, b).replace("\n", "; "))
         if ((a.lower(), b.lower()) not in report["odds_map"] and
                 (b.lower(), a.lower()) not in report["odds_map"]):
             missing_odds.append(f"{a} vs {b}: odds unavailable")
-    lines.extend(["", "BETS (5% Kelly, capped at 5% of bankroll)"])
+    lines.extend(["", "BETS — Kalshi (5% Kelly, capped at 5% of bankroll)"])
     for bet in report["bets"]:
-        lines.append(f"{bet['fighter']} vs {bet['opponent']} {bet['odds']:+d}: "
+        lines.append(f"{bet['fighter']} vs {bet['opponent']} {bet['odds']:+.0f}: "
                      f"Kelly {bet['kelly']:.2%}; stake = bankroll x {bet['stake_pct']:g}%")
     if not report["odds_map"]:
         lines.append("Odds unavailable; no stakes calculated.")
@@ -112,9 +120,68 @@ def format_messages(report):
         lines.append("No bets qualify among bouts with available odds.")
     lines.extend(missing_odds)
     lines.append("Stake % already includes fractional Kelly and cap; do not multiply by 5% again.")
-    lines.append("Sizing uses 80% model + 20% devigged market. Odds are a snapshot; check before betting.")
+    lines.append("Sizing uses 80% model + 20% devigged market. Kalshi buy-price snapshot; stakes are before exchange fees. Check prices and available size before betting.")
     header = f"UFC Alpha | {report['event']} | {report['event_date']}"
     return [header + "\n" + "\n".join(lines)]
+
+
+def _html_table(headings, rows):
+    head = ''.join(f'<th scope="col" style="padding:11px 9px;text-align:left;background:#eef1f5;">{escape(h)}</th>' for h in headings)
+    body = ''.join('<tr>' + ''.join(
+        '<td style="padding:11px 9px;border-bottom:1px solid #e4e7ec;vertical-align:top;">' +
+        escape(str(value)).replace('\n', '<br>') + '</td>' for value in row) + '</tr>' for row in rows)
+    return f'<table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+
+
+def _kalshi_cell(report, a, b):
+    quotes = report.get('kalshi_quotes', {})
+    sides = quotes.get((a.lower(), b.lower()))
+    if sides is None:
+        reverse = quotes.get((b.lower(), a.lower()))
+        sides = list(reversed(reverse)) if reverse else None
+    if not sides:
+        return 'Unavailable'
+    return '\n'.join(f"{label}: {q['price'] * 100:g}¢ ({q['odds']:+.0f})"
+                     for label, q in zip(('A', 'B'), sides))
+
+
+def format_html(report):
+    """Email-safe HTML tables, with escaped source data and inline styles."""
+    probabilities = {(a, b): p for a, b, p in report['rows']}
+    skipped = {tuple(pair): reason for pair, reason in report['skipped']}
+    rows, notes = [], []
+    for a, b in report['bouts']:
+        pick, probability = 'Unavailable', '—'
+        if (a, b) in skipped:
+            notes.append(f'{a} vs {b}: {skipped[a, b]}')
+        else:
+            p = (probabilities[a, b] + 1 - probabilities[b, a]) / 2
+            pick, confidence = (a, p) if p >= .5 else (b, 1 - p)
+            probability = f'{confidence:.1%}'
+        rows.append([a, b, pick, probability, _kalshi_cell(report, a, b)])
+    fights = _html_table(['Fighter A', 'Fighter B', 'Model Pick', 'Probability', 'Kalshi Odds'], rows)
+    bet_rows = [[b['fighter'], b['opponent'], f"{b['odds']:+.0f}", f"{b['kelly']:.2%}",
+                 f"bankroll × {b['stake_pct']:g}%"] for b in report['bets']]
+    if bet_rows:
+        bets = _html_table(['Bet On', 'Opponent', 'Kalshi Odds', 'Full Kelly', 'Stake'], bet_rows)
+    else:
+        notice = 'No bets qualify among bouts with available Kalshi quotes.' if report['odds_map'] else 'Kalshi odds unavailable; no stakes calculated.'
+        bets = f'<p>{notice}</p>'
+    notes_html = ''.join(f'<li>{escape(n)}</li>' for n in notes)
+    fetched = report.get('odds_fetched_at', 'Not recorded')
+    return ('<!doctype html><html><head><meta charset="utf-8"></head>'
+            '<body style="margin:0;background:#f4f5f7;color:#17202b;font-family:Arial,Helvetica,sans-serif;">'
+            '<div style="max-width:960px;margin:auto;padding:24px 16px;background:#ffffff;">'
+            '<p style="font-size:12px;font-weight:bold;color:#bd242b;letter-spacing:2px;">UFC ALPHA</p>'
+            f'<h1 style="font-size:24px;margin-bottom:8px;">{escape(report["event"])}</h1>'
+            f'<p style="color:#596574;">{escape(report["event_date"])}</p>'
+            '<h2 style="font-size:18px;">Fight predictions</h2>' + fights +
+            '<p style="font-size:12px;color:#596574;">Probability refers to the model pick. Kalshi A/B prices correspond to Fighter A/B: YES buy price in cents, then American odds.</p>'
+            '<h2 style="font-size:18px;margin-top:30px;">Bets · Kalshi</h2>' + bets +
+            '<p style="font-size:12px;color:#596574;">Stakes use 5% fractional Kelly, capped at 5% of bankroll. The stake percentage already includes both; do not multiply by 5% again. Sizing blends 80% model with 20% normalized market probability. Estimates are before Kalshi fees and slippage; check current prices and available size before betting.</p>'
+            f'<p style="font-size:12px;color:#596574;">Kalshi quotes fetched: {escape(fetched)}</p>' +
+            (f'<h3 style="font-size:14px;">Unavailable predictions</h3><ul style="font-size:12px;color:#596574;">{notes_html}</ul>' if notes else '') +
+            '</div></body></html>')
 
 
 class NotSubmittedError(RuntimeError):
@@ -142,7 +209,7 @@ class GmailSender:
             except (ValueError, IndexError):
                 raise ValueError(f"{key} must be a single email address without a display name") from None
 
-    def __call__(self, content, *, before_submit=None):
+    def __call__(self, content, *, before_submit=None, html=None):
         subject, body = content.split("\n", 1)
         message = EmailMessage()
         message["Subject"] = subject
@@ -151,6 +218,8 @@ class GmailSender:
         message["Date"] = formatdate(localtime=False)
         message["Message-ID"] = make_msgid(domain=self.sender.split("@", 1)[1])
         message.set_content(body)
+        if html is not None:
+            message.add_alternative(html, subtype="html")
         client = None
         try:
             try:
@@ -283,7 +352,7 @@ def run(*, send, scheduled, state_dir, hold_file, now=None):
         def submit(content):
             # Login is another network round trip. Check the hold/window again
             # after authentication and before sending any message data.
-            return sender(content, before_submit=check_send_allowed)
+            return sender(content, before_submit=check_send_allowed, html=format_html(report))
         result = deliver(state_dir / f"{key}.json", messages, submit, before_send=before_send)
         print(f"{report['event']}: {result} to Gmail (delivery not yet confirmed)")
     return 0
