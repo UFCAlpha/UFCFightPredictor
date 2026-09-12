@@ -33,3 +33,8 @@ saved_models/backup_*/
 # Edge-threshold tuning cache from testing/tune_edge_threshold.py
 test_results/.edge_tune_cache/
 test_results/.oos2024_cache*/
+
+# SMS credentials, hold switch, and private delivery receipts
+.sms.env
+data/sms.hold
+data/sms_delivery/
