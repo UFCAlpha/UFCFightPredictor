@@ -57,12 +57,12 @@ def collect_reports(today):
 
     reports = []
     for when, url, _ in events:
-        name, bouts = predictor.event_card(session, url)
+        name, bouts, ids = predictor.event_card(session, url)
         with tempfile.TemporaryDirectory(prefix="ufc-email-") as scratch:
             original = features.output_csv_filename
             try:
                 features.output_csv_filename = str(Path(scratch) / "features.csv")
-                written, skipped = predictor.build_features(bouts)
+                written, skipped = predictor.build_features(bouts, ids)
                 if not written:
                     raise RuntimeError(f"No predictions generated for {name}")
                 rows = predictor.predict_rows()
@@ -317,7 +317,7 @@ def deliver(path, messages, send, *, before_send=None):
 
 def verify_card(report):
     import predict_event as predictor
-    _, current = predictor.event_card(predictor.ufcnet.new_session(), report["event_url"])
+    _, current, _ = predictor.event_card(predictor.ufcnet.new_session(), report["event_url"])
     if {frozenset(bout) for bout in current} != {frozenset(bout) for bout in report["bouts"]}:
         raise RuntimeError("Card changed during predictions; hold email and review the updated card")
 

@@ -51,22 +51,28 @@ feature_list.extend(hardcoded_features_divide)
 header_features = []
 for column in headers:
     s1,s2=split_at_first_space(column)
-    if(s1=="Red" and s2!="Fighter"):
+    if(s1=="Red" and s2 not in ("Fighter", "Fighter ID")):
         header_features.append(s2)
 
 feature_list.extend(header_features)
 
 # extract and process fights, return them into the csv
-def extract_fighter_stats(fighter_name, opponent_name):
+def _is(row, name, fighter_id):
+    # a ufcstats id pins down one of several fighters who share a name
+    if fighter_id:
+        return row.get("ID") == fighter_id
+    return row["Fighter"] == name
+
+def extract_fighter_stats(fighter_name, opponent_name, fighter_id=None, opponent_id=None):
     fighter_stats = None
     opponent_stats = None
 
     with open(input_csv_filename, mode="r", newline="") as input_file:
         csv_reader = csv.DictReader(input_file)
         for row in csv_reader:
-            if row["Fighter"] == fighter_name:
+            if _is(row, fighter_name, fighter_id):
                 fighter_stats = row
-            elif row["Fighter"] == opponent_name:
+            elif _is(row, opponent_name, opponent_id):
                 opponent_stats = row
 
     if fighter_stats is None or opponent_stats is None:

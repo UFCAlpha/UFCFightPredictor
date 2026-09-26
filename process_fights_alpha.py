@@ -16,9 +16,21 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///detailedfighters.db"
 db.init_app(app)
 
 # ********** HELPER FUNCTIONS **********
-def query_fighter_by_name(name):
-    fighter = Fighter.query.filter_by(name=name).first() 
-    return fighter
+def query_fighter(key, name):
+    # key is the ufcstats id when the fight rows carry one; a name can belong to two fighters
+    if key != name:
+        fighter = Fighter.query.filter_by(ufcstats_id=key).first()
+        if fighter:
+            return fighter
+    return Fighter.query.filter_by(name=name).first()
+
+def fighter_key(fight, side):
+    """Identity of one corner: its ufcstats id, or the name on rows without ids."""
+    return (fight.get(f'{side} Fighter ID') or '').strip() or fight[f'{side} Fighter']
+
+def row_names(fight):
+    """fighter_key -> the name this fight row gives that corner."""
+    return {fighter_key(fight, side): fight[f'{side} Fighter'] for side in ('Red', 'Blue')}
 
 file_path = os.path.join('data', 'modified_fight_details.csv')
 
@@ -87,13 +99,17 @@ fighter_stats = dict()
 
 fights = reverse_csv_to_dict(file_path)
 
+# per-fighter state is keyed by fighter_key(). names[key] is the fighter's latest name, used
+# only to label the fighter-stat exports: each fight keeps the names stored on its own row,
+# because ufcstats renames fighters ("Bobby Green" -> "King Green") and the Winner column,
+# the odds file and the backtests all carry the name as it was at the time.
 all_fighters = set()
+names = {}
 for fight in fights:
-    Red = fight['Red Fighter']
-    Blue = fight['Blue Fighter']
-    all_fighters.add(Red)
-    all_fighters.add(Blue)
-    pass
+    for side in ('Red', 'Blue'):
+        key = fighter_key(fight, side)
+        all_fighters.add(key)
+        names[key] = fight[f'{side} Fighter']
 
 # retrieve all total strike numbers from head, body, leg, distance, clinch, ground, sig.str
 # store it back into the dicts
@@ -108,7 +124,7 @@ feature_list.extend(hardcoded_features_divide)
 header_features = []
 for column in headers:
     s1,s2=split_at_first_space(column)
-    if(s1=="Red" and s2!="Fighter"):
+    if(s1=="Red" and s2 not in ("Fighter", "Fighter ID")):
         header_features.append(s2)
 
 feature_list.extend(header_features)
@@ -118,7 +134,7 @@ with app.app_context():
     # insertion order of fighter_stats, which is the order both exports are written in.
     # Unsorted, every run rewrote data/detailed_fighter_stats.csv and
     # data/fighter_stats_readable.txt in a different order and left the repo dirty.
-    for fighter in sorted(all_fighters):
+    for fighter in sorted(all_fighters, key=lambda k: (names[k], k)):
         fighter_stats[fighter] = {}
         for feature in feature_list:
             fighter_stats[fighter][feature]=0
@@ -128,7 +144,7 @@ with app.app_context():
                 fighter_stats[fighter][f"{feature} defense"]=0
         fighter_stats[fighter]["elo"]=1000
         # get DOB        
-        fighter_object = query_fighter_by_name(fighter)
+        fighter_object = query_fighter(fighter, names[fighter])
         if fighter_object:
             date_format = "%b %d, %Y"  # Format like "Oct 01, 1990"
             try:
@@ -168,11 +184,12 @@ def getDate(date_string, date_format):
     
 # PROCESS FIGHTS TO RED AND BLUE 
 def processFight(fight, Red, Blue):
+    name = row_names(fight)
     winner = fight['Winner']
     Result='draw'
-    if winner == Red:
+    if winner == name[Red]:
         Result = 'win'
-    elif winner == Blue:
+    elif winner == name[Blue]:
         Result = 'loss'
     if Result == 'draw':
         return
@@ -186,8 +203,8 @@ def processFight(fight, Red, Blue):
 
     processed_fight = {"Result": Result}
     if fighter_stats[Red]["totalfights"] >= 2 and fighter_stats[Blue]["totalfights"] >= 2:
-        processed_fight['Red Fighter'] = Red
-        processed_fight['Blue Fighter'] = Blue
+        processed_fight['Red Fighter'] = name[Red]
+        processed_fight['Blue Fighter'] = name[Blue]
         processed_fight['Title'] = fight['Title']
         processed_fight['Date'] = fight['Date']
         fight_date=getDate(fight['Date'], "%B %d, %Y")
@@ -244,8 +261,8 @@ def processFight(fight, Red, Blue):
 print(header_features)
 for fight in fights:
     count+=1
-    Red = fight['Red Fighter']
-    Blue = fight['Blue Fighter']
+    Red = fighter_key(fight, 'Red')
+    Blue = fighter_key(fight, 'Blue')
 
     processFight(fight, Red, Blue)
 
@@ -282,9 +299,9 @@ for fight in fights:
             fighter_stats[Blue][f"{feature}"] += blue_value * sqr(bluefights) / fight_time
     winner = fight['Winner']
     Result='draw'
-    if winner == Red:
+    if winner == fight['Red Fighter']:
         Result = 'win'
-    elif winner == Blue:
+    elif winner == fight['Blue Fighter']:
         Result = 'loss'
 
     title=False
@@ -335,12 +352,12 @@ def export_fighter_stats(fighter_stats, filename=os.path.join('data', 'detailed_
     with open(filename, mode='w', newline='') as file:
         if fighter_stats:  # check if the dictionary is not empty
             example_fighter = next(iter(fighter_stats.values()))  # Get an example of the inner dictionary
-            headers = ['Fighter'] + list(example_fighter.keys())  # 'Fighter' column plus each stat
+            headers = ['Fighter', 'ID'] + list(example_fighter.keys())  # name, ufcstats id, each stat
             writer = csv.DictWriter(file, fieldnames=headers)
             writer.writeheader()
 
             for fighter, stats in fighter_stats.items():
-                row = {'Fighter': fighter}  # Start with fighter name
+                row = {'Fighter': names[fighter], 'ID': fighter if fighter != names[fighter] else ''}
                 row.update(stats)  # Add the stats
                 writer.writerow(row)
 
@@ -352,7 +369,9 @@ def write_to_text_file(data, file_path, is_fighter_stats=False):
     with open(file_path, 'w') as file:
         if is_fighter_stats:
             for fighter, stats in data.items():
-                file.write(f"Fighter: {fighter}\n")
+                file.write(f"Fighter: {names[fighter]}\n")
+                if fighter != names[fighter]:
+                    file.write(f"  id: {fighter}\n")
                 for stat, value in stats.items():
                     file.write(f"  {stat}: {value}\n")
                 file.write("\n")

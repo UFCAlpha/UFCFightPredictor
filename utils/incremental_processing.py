@@ -25,6 +25,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "data", "fight_details_date.csv")
 DST = os.path.join(ROOT, "data", "modified_fight_details.csv")
 
+# ufcstats fighter ids are hex strings; left to inference, one like "1234e567..." reads as a float
+ID_COLUMNS = ["Red Fighter ID", "Blue Fighter ID"]
+
 DROP_COLUMNS = ["Red Sig. str. %", "Red Td %", "Blue Sig. str. %", "Blue Td %",
                 "Red Sig. str", "Blue Sig. str", "Red Sig. str%", "Blue Sig. str%"]
 
@@ -47,7 +50,7 @@ def time_to_minutes(value):
 
 
 def build(src=SRC, dst=DST, backup=True, log=print):
-    df = pd.read_csv(src, low_memory=False)
+    df = pd.read_csv(src, low_memory=False, dtype={c: str for c in ID_COLUMNS})
     log(f"read {len(df)} raw rows")
 
     for col in df.columns:

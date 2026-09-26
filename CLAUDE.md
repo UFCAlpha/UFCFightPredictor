@@ -126,7 +126,7 @@ ufcstats.com → scrapers/scrape_incremental.py → data/fight_details_date.csv
 - **Publishing**: `publish_site.py` — re-exports `frontend/src/data`, commits it if the content changed, pushes main; `--roll` extends the walk-forward window. `run_scheduled.sh` chains it after the retrain
 - **HTTP**: `scrapers/ufcnet.py` — ufcstats session that clears the anti-bot challenge
 - **Scraping**: `scrapers/scrape_incremental.py` — detects last stored date, scrapes only newer events
-- **Fighters**: `scrapers/update_fighters.py` — adds debutants to `instance/detailedfighters.db`
+- **Fighters**: `scrapers/update_fighters.py` — links `instance/detailedfighters.db` rows to ufcstats ids, adds debutants, refills bio fields (height, reach, DOB) that were blank when a fighter was added
 - **Processing**: `utils/incremental_processing.py` — data cleaning, format conversion
 - **Features**: `process_fights_alpha.py` — ELO, per-minute stats, weighted averages
 - **Training**: `ml_ensemble.py` — tunes/saves five evaluation candidates, preprocessing, calibration, and a hash-bound holdout report
@@ -143,7 +143,8 @@ ufcstats.com → scrapers/scrape_incremental.py → data/fight_details_date.csv
 - `saved_models/backup_YYYYMMDD_HHMMSS/` — timestamped backups written before each retrain, including a copy of `saved_preprocessing/`.
 
 ### Data Files
-- `data/fight_details_date.csv` — raw scraped fights, stored **newest-first**; new rows are prepended
+- `data/fight_details_date.csv` — raw scraped fights, stored **newest-first**; new rows are prepended.
+  Its last two columns, `Red Fighter ID` / `Blue Fighter ID`, are ufcstats fighter ids (see below)
 - `data/modified_fight_details.csv` — cleaned/processed fights (also newest-first)
 - `data/detailed_fights.csv` — feature-engineered dataset, oldest-first (full recompute each run)
 - `data/detailed_fighter_stats.csv` — per-fighter career state, read by `predict_fights_alpha.py`
@@ -233,6 +234,18 @@ Runs Monday & Friday at 2:00 AM via launchd:
    main so Cloudflare Pages rebuilds. It never rolls the backtest window on its own.
 
 Any step that fails, or produces nothing, exits non-zero.
+
+### Fighter names are not unique; ids are
+Six names in the data belong to two fighters each (two active Bruno Silvas, 185 lb and
+125 lb; Victor Valenzuela; Mike Davis; ...). Names stay the display value and the join key
+for odds, bets, the ledger and the site — a (fighter, opponent, date) triple is unique even
+for shared names, so none of that code changed. Anything holding **per-fighter state** keys
+on the ufcstats id instead: `process_fights_alpha.py` (ELO, streaks, averages, bio lookup via
+`Fighter.ufcstats_id`), `detailed_fighter_stats.csv` (`ID` column), and `predict_event.py`
+(ids read from the card's fighter links). The ids were backfilled once from event pages by
+`scrapers/backfill_fighter_ids.py`; the scraper records them on every new fight and refuses a
+fight page without them. Any new reader that detects stat columns from `Red <x>` headers must
+skip `Fighter ID` as well as `Fighter`.
 
 ### Known quirks
 - The cleaning step drops every `Title` containing "Women", so **women's bouts are absent

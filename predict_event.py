@@ -47,6 +47,7 @@ sys.path.insert(0, os.path.join(ROOT, "scrapers"))
 import betting_math
 import bet_ledger
 import ufcnet
+from fighter_ids import fighter_id
 from ufcnet import ScrapeError
 
 UPCOMING = "http://ufcstats.com/statistics/events/upcoming?page=all"
@@ -90,7 +91,10 @@ def upcoming_events(session):
 
 
 def event_card(session, url):
-    """(event name, [(fighter_a, fighter_b), ...]) for a ufcstats event page."""
+    """(event name, [(fighter_a, fighter_b), ...], {(a, b): (id_a, id_b)}) for an event page.
+
+    The ids are the fighters' ufcstats ids: a name can belong to two fighters.
+    """
     soup = BeautifulSoup(ufcnet.get(session, url), "html.parser")
     title = soup.find("span", class_="b-content__title-highlight")
     name = title.get_text(strip=True) if title else url
@@ -98,32 +102,39 @@ def event_card(session, url):
     body = soup.find("tbody", class_="b-fight-details__table-body")
     if body is None:
         raise ScrapeError(f"no fight table on {url}")
-    bouts = []
+    bouts, ids = [], {}
     for row in body.find_all("tr", class_="b-fight-details__table-row"):
         links = row.find_all("a", class_="b-link_style_black")
         if len(links) >= 2:
-            bouts.append((links[0].get_text(strip=True), links[1].get_text(strip=True)))
+            bout = (links[0].get_text(strip=True), links[1].get_text(strip=True))
+            bouts.append(bout)
+            ids[bout] = (fighter_id(links[0].get("href")), fighter_id(links[1].get("href")))
     if not bouts:
         raise ScrapeError(f"fight table on {url} parsed to zero bouts")
-    return name, bouts
+    return name, bouts, ids
 
 
 # ------------------------------------------------------------------ features
 
 def _known_fighters():
-    """name -> prior fight count, from the stats the feature builder reads."""
+    """ufcstats id or name -> prior fight count, from the stats the feature builder reads."""
     path = os.path.join(ROOT, "data", "detailed_fighter_stats.csv")
+    known = {}
     with open(path, newline="") as fh:
-        return {r["Fighter"]: int(r["totalfights"]) for r in csv.DictReader(fh)}
+        for r in csv.DictReader(fh):
+            known[r.get("ID") or r["Fighter"]] = int(r["totalfights"])
+    return known
 
 
-def build_features(bouts):
+def build_features(bouts, ids=None):
     """Write both orientations of every bout to data/predict_fights_alpha.csv.
 
     Returns (rows_written, skipped) where each skip carries the reason. The
     feature builder needs at least two prior bouts per fighter, and the
     training data excludes women's bouts entirely (modify_fights.py drops any
     Title containing "Women"), so those fighters never appear in the stats.
+    `ids` maps a bout to its fighters' ufcstats ids (event_card); a fighter is
+    looked up by id when the stats carry one for him, else by name.
     """
     import predict_fights_alpha as pfa
 
@@ -133,17 +144,20 @@ def build_features(bouts):
 
     written, skipped = 0, []
     for a, b in bouts:
+        id_a, id_b = (ids or {}).get((a, b), (None, None))
+        # an id the stats don't carry (fighter with no id-bearing rows) falls back to the name
+        id_a, id_b = (i if i in known else None for i in (id_a, id_b))
         reasons = []
-        for who in (a, b):
-            if who not in known:
+        for who, key in ((a, id_a or a), (b, id_b or b)):
+            if key not in known:
                 reasons.append(f"{who}: no UFC history in the dataset")
-            elif known[who] < 2:
-                reasons.append(f"{who}: only {known[who]} prior fight")
+            elif known[key] < 2:
+                reasons.append(f"{who}: only {known[key]} prior fight")
         if reasons:
             skipped.append(((a, b), "; ".join(reasons)))
             continue
-        for first, second in ((a, b), (b, a)):
-            pfa.extract_fighter_stats(first, second)
+        for first, second, fid, oid in ((a, b, id_a, id_b), (b, a, id_b, id_a)):
+            pfa.extract_fighter_stats(first, second, fid, oid)
         with open(pfa.output_csv_filename) as fh:
             after = sum(1 for _ in csv.DictReader(fh))
         if after == written:
@@ -360,10 +374,10 @@ def main():
         print(f"Next event: {name} — {when.date()}")
     event_date = (when or datetime.datetime.now()).strftime("%Y-%m-%d")
 
-    event_name, bouts = event_card(session, url)
+    event_name, bouts, ids = event_card(session, url)
     print(f"{event_name}: {len(bouts)} bouts")
 
-    written, skipped = build_features(bouts)
+    written, skipped = build_features(bouts, ids)
     for (a, b), reason in skipped:
         print(f"  skipped {a} vs {b} — {reason}")
     if written == 0:

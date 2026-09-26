@@ -22,6 +22,7 @@ class Fighter(db.Model):
     Reach = db.Column(db.String)
     Stance = db.Column(db.String)
     DOB = db.Column(db.String)
+    ufcstats_id = db.Column(db.String)  # names are not unique; see scrapers/fighter_ids.py
 
     fights = db.relationship("Fight", back_populates="fighter")
 

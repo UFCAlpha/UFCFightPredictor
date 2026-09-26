@@ -217,8 +217,8 @@ def fake_predictor(monkeypatch):
     monkeypatch.setattr(predict_event.ufcnet, "new_session", lambda: object())
     monkeypatch.setattr(predict_event, "upcoming_events", lambda _: [
         (dt.datetime(2026, 9, 12), "url12", "UFC Test")])
-    monkeypatch.setattr(predict_event, "event_card", lambda *a: ("UFC Test", [("A", "B")]))
-    def features(bouts):
+    monkeypatch.setattr(predict_event, "event_card", lambda *a: ("UFC Test", [("A", "B")], {}))
+    def features(bouts, ids=None):
         assert scratch.output_csv_filename != "original.csv"
         return 2, []
     monkeypatch.setattr(predict_event, "build_features", features)
@@ -263,7 +263,7 @@ def test_changed_card_aborts_before_network_send(picks, fake_predictor, report):
 def test_no_weekend_event_never_builds_features(picks, fake_predictor, monkeypatch):
     monkeypatch.setattr(fake_predictor[0], "upcoming_events", lambda _: [
         (dt.datetime(2026, 9, 19), "url19", "Next Week")])
-    monkeypatch.setattr(fake_predictor[0], "build_features", lambda _: pytest.fail("built features"))
+    monkeypatch.setattr(fake_predictor[0], "build_features", lambda *_: pytest.fail("built features"))
     assert picks.collect_reports(dt.date(2026, 9, 11)) == []
 
 

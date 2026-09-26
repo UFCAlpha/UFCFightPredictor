@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ufcnet
 import update_fighters
+from fighter_ids import ID_COLUMNS, fighter_id
 from ufcnet import ScrapeError
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -110,7 +111,15 @@ def parse_fight(html):
             draw = True  # draws keep an empty Winner/Loser, as in the stored file
 
     red, blue = {}, {}
+    red_id = blue_id = None
     for body in soup.find_all("tbody", class_="b-fight-details__table-body"):
+        if red_id is None:
+            # the Fighter cell links both corners, red first, same order as the stats
+            first = body.find("td", class_="b-fight-details__table-col")
+            ids = [fighter_id(a.get("href")) for a in first.find_all("a")] if first else []
+            ids = [i for i in ids if i]
+            if len(ids) >= 2:
+                red_id, blue_id = ids[:2]
         thead = body.find_previous("thead")
         if not thead:
             continue
@@ -129,7 +138,7 @@ def parse_fight(html):
         raise ScrapeError("fight page had no fighter statistics table")
 
     return {"info": info, "winner": winner, "loser": loser, "draw": draw,
-            "red": red, "blue": blue}
+            "red": red, "blue": blue, "red_id": red_id, "blue_id": blue_id}
 
 
 def to_row(fight, date_text, header):
@@ -150,6 +159,10 @@ def to_row(fight, date_text, header):
     ]
     for side in ("red", "blue"):
         row += [fight[side].get(k, "") for k in STAT_KEYS]
+    if all(c in header for c in ID_COLUMNS):
+        if not (fight.get("red_id") and fight.get("blue_id")):
+            raise ScrapeError(f"no fighter ids on the fight page for {fight['red'].get('Fighter')}")
+        row += [fight["red_id"], fight["blue_id"]]
     if len(row) != len(header):
         raise ScrapeError(f"row has {len(row)} fields, file has {len(header)}")
     return row

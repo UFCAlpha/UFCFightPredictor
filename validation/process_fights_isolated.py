@@ -376,7 +376,7 @@ class ProcessFightsIsolated:
         self.header_features = []
         for column in headers:
             s1, s2 = self._split_at_first_space(column)
-            if s1 == "Red" and s2 != "Fighter":
+            if s1 == "Red" and s2 not in ("Fighter", "Fighter ID"):
                 self.header_features.append(s2)
 
         self.feature_list = []
