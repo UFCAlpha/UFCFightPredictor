@@ -1,89 +1,89 @@
 {
   "stage": "production",
-  "created_at": "2026-09-12T15:48:03.851672+00:00",
-  "data_sha256": "8d2a444435d216d66b6c05feb40b0aa1d3dfebf6816df3cbc60630d3c37e6e00",
+  "created_at": "2026-09-22T05:19:39.694020+00:00",
+  "data_sha256": "8868e210849f0ce944869c159377831f1062ad829d555d65c7e21664a8cea9ff",
   "artifact_sha256": {
-    "lgbm_model_0.joblib": "a2412f25418f890d603b5f35ce4aead6c6e34adb16260efff720e2792d47e980",
-    "lgbm_model_1.joblib": "734a329007b30396afc254ecb91f73b61cd28e97f3520e8cc1641f4fc557b224",
-    "lgbm_model_2.joblib": "b918f430bf611708bba264c811a9c3238fab96e5513e9735e8feb4c546df4220",
-    "lgbm_model_3.joblib": "5a7d9fde27e0c300713c532b90a31b3d24f63d3801ce3e5ba6b0e2cbe56c4a76",
-    "lgbm_model_4.joblib": "4a9c02d24ee548aa0da65920ed282556aa663ee0b004547679a80dc71b675d29",
+    "lgbm_model_0.joblib": "1e122b39041fe0192887d33382a3ef86bdf1069a45063a417edb9c7ed3f57ed8",
+    "lgbm_model_1.joblib": "5abb9e73a9656c86fd7be1f6337453b746066108611eb31607b5225f029ca976",
+    "lgbm_model_2.joblib": "0c903f62c342e70319f946a0ddb2eda1990c2a07cce70cbf9d9a51f4009bdbf2",
+    "lgbm_model_3.joblib": "2aff071c8394b10de3dd45131679ac0c8de177aaf08d2fa191480ff9e724b9fc",
+    "lgbm_model_4.joblib": "5c157963b1eaa2dcaaef466e692529c54cdad2d1522d0153c4f3454cced3d20b",
     "selected_columns.json": "9bce8957d9a4c6911c58bf5b99100bf181bb01c795320d166da8f74e67b45092",
     "label_encoder.joblib": "ea17bd112697d731066e7c04a7cd0307a46bfee25cf3ea31ad5adf9a28175610",
-    "calibrator.joblib": "4be5ae1d8478c5798799f77f122480f0ff31c95461b6c786b7331bd629de777d"
+    "calibrator.joblib": "aa2eef96e5cdd29a4545b6b09154a2dae5d786977befa175ccd862a94cb71a14"
   },
   "candidate": {
-    "rows": 2869,
-    "first_row": 1229,
-    "holdout_first_row": 4098,
+    "rows": 2882,
+    "first_row": 1234,
+    "holdout_first_row": 4116,
     "first_fight": "2014-10-25",
-    "last_fight": "2025-11-22"
+    "last_fight": "2025-12-13"
   },
   "evaluation": {
     "scope": "candidate holdout before production refit",
-    "n": 216,
-    "first_fight": "2025-11-22",
-    "last_fight": "2026-09-05",
-    "accuracy": 0.6666666666666666,
-    "log_loss": 0.6214408846682735,
-    "brier": 0.2152972927837044,
-    "auc": 0.7263374485596708
+    "n": 217,
+    "first_fight": "2025-12-13",
+    "last_fight": "2026-09-19",
+    "accuracy": 0.6589861751152074,
+    "log_loss": 0.633101647893545,
+    "brier": 0.2205437780436622,
+    "auc": 0.7054875976894326
   },
   "candidate_artifact_sha256": {
-    "lgbm_model_0.joblib": "d2d79452b97c8b20a4f8f62dacab920be2e9caa0f2067761518794c6d759c344",
-    "lgbm_model_1.joblib": "dabb853319132446c5a8c5b7ca683da7da19d826d182165cb5cd4f6ec3777c2e",
-    "lgbm_model_2.joblib": "e6851e723826d8891bca584cafae09db4b57d8203b9b3d7691697f47bc18417e",
-    "lgbm_model_3.joblib": "849da9639a00bcdfa802a35983a4d61e4643e8cebeb05e7bf4aa726a45933854",
-    "lgbm_model_4.joblib": "c052102ec2de91b8c7c727195276540f05343bc05c82e430908f84dd55d436d0",
+    "lgbm_model_0.joblib": "f306215384b46d30d7468e59e3316105875af2c6e79fbb87150bfd704f8ebefd",
+    "lgbm_model_1.joblib": "e11630b2439d2695b83227c643fc39b77c1070810100cea58d0bc0a36b804f34",
+    "lgbm_model_2.joblib": "ed8363a06c749e2c224e2bf7c77b8266f8be4d5c0078cdd921a10e0db39a7cb1",
+    "lgbm_model_3.joblib": "a2540c175088903bce1ff27deb6e689cdb7b718189eaa9c01bbe4f1efdf6fd68",
+    "lgbm_model_4.joblib": "7bc43b08bcf94a3b840cd8b237c301c2c2fbc9e9572139a7341e6b633bdb4a3c",
     "selected_columns.json": "9bce8957d9a4c6911c58bf5b99100bf181bb01c795320d166da8f74e67b45092",
     "label_encoder.joblib": "ea17bd112697d731066e7c04a7cd0307a46bfee25cf3ea31ad5adf9a28175610",
-    "calibrator.joblib": "359685e2345913e97b49bea4c9acd6401308e3bed089f83d482b24dd83cdfe37"
+    "calibrator.joblib": "9dd1f0e0327e72c85c330c7b8e9fd5ad281738f7378b7090155a637eb9af3b3a"
   },
   "production": {
-    "fitted_at": "2026-09-12T15:48:38.492052+00:00",
-    "rows": 3085,
-    "augmented_rows": 6170,
+    "fitted_at": "2026-09-22T05:19:59.074919+00:00",
+    "rows": 3099,
+    "augmented_rows": 6198,
     "first_fight": "2014-10-25",
-    "last_fight": "2026-09-05",
-    "temperature": 1.1240849906473014,
+    "last_fight": "2026-09-19",
+    "temperature": 1.196545097516281,
     "calibration_rows": 2547,
     "calibration_folds": [
       {
-        "train_end": "2016-11-12",
-        "validation_start": "2016-11-19",
-        "validation_end": "2018-12-01",
-        "train_rows": 538,
-        "validation_rows": 524
+        "train_end": "2016-11-26",
+        "validation_start": "2016-12-03",
+        "validation_end": "2018-12-15",
+        "train_rows": 552,
+        "validation_rows": 521
       },
       {
-        "train_end": "2018-12-01",
-        "validation_start": "2018-12-08",
-        "validation_end": "2020-11-21",
-        "train_rows": 1062,
-        "validation_rows": 448
+        "train_end": "2018-12-15",
+        "validation_start": "2018-12-29",
+        "validation_end": "2020-12-05",
+        "train_rows": 1073,
+        "validation_rows": 439
       },
       {
-        "train_end": "2020-11-21",
-        "validation_start": "2020-11-28",
-        "validation_end": "2022-10-22",
-        "train_rows": 1510,
-        "validation_rows": 508
+        "train_end": "2020-12-05",
+        "validation_start": "2020-12-12",
+        "validation_end": "2022-11-05",
+        "train_rows": 1512,
+        "validation_rows": 513
       },
       {
-        "train_end": "2022-10-22",
-        "validation_start": "2022-10-29",
-        "validation_end": "2024-09-28",
-        "train_rows": 2018,
-        "validation_rows": 517
+        "train_end": "2022-11-05",
+        "validation_start": "2022-11-12",
+        "validation_end": "2024-10-12",
+        "train_rows": 2025,
+        "validation_rows": 520
       },
       {
-        "train_end": "2024-09-28",
-        "validation_start": "2024-10-05",
-        "validation_end": "2026-09-05",
-        "train_rows": 2535,
-        "validation_rows": 550
+        "train_end": "2024-10-12",
+        "validation_start": "2024-10-19",
+        "validation_end": "2026-09-19",
+        "train_rows": 2545,
+        "validation_rows": 554
       }
     ],
-    "calibration_oof_log_loss": 0.6561433539281989
+    "calibration_oof_log_loss": 0.6545343799429904
   }
 }
